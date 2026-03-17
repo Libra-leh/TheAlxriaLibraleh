@@ -11,9 +11,9 @@ Feature:
 + Real-time updating across all site
 + Personalize your library with adding categories of your own feature.
    How it work:
-  +English bookcover is supported by Google Books API, while Vietnamese bookcover is found by scraping Tiki's api through a Cloundfare worker account
-  +Data is store temporarily in localstorage and permanently in Firebase.
-  +Frontend: htlm, JavaScript, CCS 
-  +Hosted by GitHub
++English bookcover is supported by Google Books API, while Vietnamese bookcover is found by scraping Tiki's api through a Cloundfare worker account
++Data is store temporarily in localstorage and permanently in Firebase.
++Frontend: htlm, JavaScript, CCS 
++Hosted by GitHub
 ***This website is created by a group of idle students with incomplete understanding of coding and with the help of Claude AI***  
   

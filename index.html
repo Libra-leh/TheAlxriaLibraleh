@@ -995,68 +995,116 @@ const FS_COLLECTION = 'library';
 </header>
 <!-- Instagram PNG Export — paste before </body> -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+#ig-preview-overlay {
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+  z-index:99999;align-items:center;justify-content:center;flex-direction:column;gap:16px;
+}
+#ig-preview-overlay.open { display:flex; }
+#ig-preview-box {
+  background:#111;border-radius:14px;padding:16px;
+  display:flex;flex-direction:column;align-items:center;gap:12px;
+  max-height:90vh;overflow:auto;
+}
+#ig-preview-img { width:270px;height:440px;object-fit:cover;border-radius:10px;display:block; }
+.ig-btn-row { display:flex;gap:10px; }
+.ig-btn {
+  padding:10px 22px;border:none;border-radius:8px;font-size:14px;
+  font-weight:700;cursor:pointer;transition:opacity .15s;
+}
+.ig-btn:hover { opacity:.85; }
+.ig-btn-regen  { background:#f59e0b;color:#000; }
+.ig-btn-dl     { background:#22c55e;color:#fff; }
+.ig-btn-cancel { background:#374151;color:#fff; }
+</style>
 <script>
 (function() {
   const GRADIENTS = [
-    "linear-gradient(160deg,#ffecd2,#fcb69f)",
-    "linear-gradient(160deg,#a1c4fd,#c2e9fb)",
-    "linear-gradient(160deg,#d4fc79,#96e6a1)",
-    "linear-gradient(160deg,#fccb90,#d57eeb)",
-    "linear-gradient(160deg,#f5f7fa,#c3cfe2)",
-    "linear-gradient(160deg,#fddb92,#d1fdff)",
+    "linear-gradient(145deg,#ff0080,#ff8c00,#ffed00)",
+    "linear-gradient(145deg,#6a11cb,#2575fc)",
+    "linear-gradient(145deg,#f7971e,#ffd200)",
+    "linear-gradient(145deg,#00b09b,#96c93d)",
+    "linear-gradient(145deg,#e53935,#e91e63,#9c27b0)",
+    "linear-gradient(145deg,#1a237e,#283593,#42a5f5)",
+    "linear-gradient(145deg,#bf360c,#e64a19,#ff7043)",
+    "linear-gradient(145deg,#004d40,#00695c,#26a69a)",
+    "linear-gradient(145deg,#880e4f,#e91e63,#f48fb1)",
+    "linear-gradient(145deg,#1b1b2f,#e43f5a)",
   ];
 
+  let _currentGradIdx = 0;
+  let _currentBookData = null;
+
+  // ── Inject overlay HTML once
+  const overlay = document.createElement('div');
+  overlay.id = 'ig-preview-overlay';
+  overlay.innerHTML = `
+    <div id="ig-preview-box">
+      <p style="color:#aaa;font-size:12px;letter-spacing:.05em;text-transform:uppercase;">Preview</p>
+      <img id="ig-preview-img" src="" alt="preview">
+      <div class="ig-btn-row">
+        <button class="ig-btn ig-btn-regen"  onclick="igRegenerate()">🎨 Regenerate</button>
+        <button class="ig-btn ig-btn-dl"     onclick="igDownload()">⬇ Download</button>
+        <button class="ig-btn ig-btn-cancel" onclick="igClose()">✕ Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // ── Add 📷 buttons to cards
   function addExportButtons() {
     document.querySelectorAll('.book-card').forEach(card => {
       if (card.querySelector('.ig-export-btn')) return;
       const actions = card.querySelector('.book-actions');
       if (!actions) return;
-
       const btn = document.createElement('button');
       btn.className = 'action-btn ig-export-btn';
-      btn.title = 'Export for Instagram';
+      btn.title = 'Export PNG for Instagram';
       btn.innerHTML = '📷';
       btn.style.fontSize = '16px';
-      btn.addEventListener('click', e => { e.stopPropagation(); exportCard(card); });
+      btn.addEventListener('click', e => { e.stopPropagation(); openPreview(card); });
       actions.insertBefore(btn, actions.firstChild);
     });
   }
 
-  function exportCard(card) {
-    const titleEl  = card.querySelector('.book-title');
-    const authorEl = card.querySelector('.book-author');
-    const imgEl    = card.querySelector('.book-cover img');
-    const ratingEl = card.querySelector('.star-count');
+  // ── Fetch cover as dataURL
+  async function toDataURL(src) {
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      return new Promise(resolve => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => resolve(null);
+        r.readAsDataURL(blob);
+      });
+    } catch { return null; }
+  }
 
-    const title  = titleEl  ? titleEl.textContent.trim()  : 'Book';
-    const author = authorEl ? authorEl.textContent.trim() : '';
-    const rating = ratingEl ? parseFloat(ratingEl.textContent) : 0;
-    const coverSrc = imgEl ? imgEl.src : '';
-
-    const grad = GRADIENTS[title.charCodeAt(0) % GRADIENTS.length];
+  // ── Build off-screen template & return canvas dataURL
+  async function buildCanvas(data, gradIdx) {
+    const grad = GRADIENTS[gradIdx % GRADIENTS.length];
+    const { title, author, rating, coverData } = data;
     const stars = rating ? ('★'.repeat(Math.round(rating)) + '☆'.repeat(5 - Math.round(rating))) : '';
 
-    // Build off-screen template
     const wrap = document.createElement('div');
     wrap.style.cssText = `
-      position:fixed;left:-9999px;top:0;
-      width:540px;height:880px;background:${grad};
-      display:flex;flex-direction:column;align-items:center;
-      justify-content:flex-start;padding:60px 40px 48px;
-      font-family:Georgia,serif;box-sizing:border-box;
+      position:fixed;left:-9999px;top:0;width:540px;height:880px;
+      background:${grad};display:flex;flex-direction:column;
+      align-items:center;justify-content:flex-start;
+      padding:60px 40px 48px;font-family:Georgia,serif;box-sizing:border-box;
     `;
 
     const coverBox = document.createElement('div');
     coverBox.style.cssText = `
       width:320px;height:460px;border-radius:18px;overflow:hidden;
-      box-shadow:0 16px 48px rgba(0,0,0,.22);flex-shrink:0;
-      background:rgba(255,255,255,.35);display:flex;
+      box-shadow:0 20px 60px rgba(0,0,0,.5);flex-shrink:0;
+      background:rgba(255,255,255,.15);display:flex;
       align-items:center;justify-content:center;
     `;
-    if (coverSrc) {
+    if (coverData) {
       const img = document.createElement('img');
-      img.crossOrigin = 'anonymous';
-      img.src = coverSrc;
+      img.src = coverData;
       img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
       coverBox.appendChild(img);
     } else {
@@ -1066,40 +1114,73 @@ const FS_COLLECTION = 'library';
     const textBox = document.createElement('div');
     textBox.style.cssText = 'margin-top:32px;text-align:center;width:100%;';
     textBox.innerHTML = `
-      <div style="font-size:30px;font-weight:900;color:#111;line-height:1.2;
-                  letter-spacing:.5px;margin-bottom:10px;text-transform:uppercase;">
-        ${title}
-      </div>
-      <div style="font-size:15px;font-weight:500;color:#444;letter-spacing:2px;
-                  text-transform:uppercase;margin-bottom:20px;">
-        ${author}
-      </div>
-      ${rating > 0 ? `<div style="font-size:20px;color:#222;letter-spacing:2px;">
-        ${stars} &nbsp; ${rating} / 5
-      </div>` : ''}
+      <div style="font-size:30px;font-weight:900;color:#fff;line-height:1.2;
+                  letter-spacing:1px;margin-bottom:10px;text-transform:uppercase;
+                  text-shadow:0 2px 12px rgba(0,0,0,.4);">${title}</div>
+      <div style="font-size:15px;font-weight:600;color:rgba(255,255,255,.85);
+                  letter-spacing:3px;text-transform:uppercase;margin-bottom:20px;
+                  text-shadow:0 1px 6px rgba(0,0,0,.3);">${author}</div>
+      ${rating > 0 ? `<div style="font-size:22px;color:#fff;letter-spacing:2px;
+                  text-shadow:0 1px 6px rgba(0,0,0,.3);">${stars} &nbsp; ${rating} / 5</div>` : ''}
     `;
 
     wrap.appendChild(coverBox);
     wrap.appendChild(textBox);
     document.body.appendChild(wrap);
 
-    const doCapture = () => {
-      html2canvas(wrap, { scale:2, useCORS:true, allowTaint:true, backgroundColor:null })
-        .then(canvas => {
-          const a = document.createElement('a');
-          a.download = title.replace(/[^a-z0-9]/gi,'_') + '.png';
-          a.href = canvas.toDataURL('image/png');
-          a.click();
-          document.body.removeChild(wrap);
-        });
-    };
-
-    const img = wrap.querySelector('img');
-    if (img && !img.complete) { img.onload = doCapture; img.onerror = doCapture; }
-    else setTimeout(doCapture, 80);
+    const canvas = await html2canvas(wrap, { scale:2, useCORS:true, allowTaint:true, backgroundColor:null });
+    document.body.removeChild(wrap);
+    return canvas;
   }
 
-  // Run once + watch for new cards rendered dynamically
+  // ── Open preview modal
+  async function openPreview(card) {
+    const titleEl  = card.querySelector('.book-title');
+    const authorEl = card.querySelector('.book-author');
+    const imgEl    = card.querySelector('.book-cover img');
+    const ratingEl = card.querySelector('.star-count');
+
+    const title    = titleEl  ? titleEl.textContent.trim()  : 'Book';
+    const author   = authorEl ? authorEl.textContent.trim() : '';
+    const rating   = ratingEl ? parseFloat(ratingEl.textContent) : 0;
+    const coverSrc = imgEl ? imgEl.src : '';
+    const coverData = coverSrc ? await toDataURL(coverSrc) : null;
+
+    _currentBookData = { title, author, rating, coverData };
+    _currentGradIdx  = title.charCodeAt(0) % GRADIENTS.length;
+
+    await renderPreview();
+    document.getElementById('ig-preview-overlay').classList.add('open');
+  }
+
+  async function renderPreview() {
+    const canvas = await buildCanvas(_currentBookData, _currentGradIdx);
+    document.getElementById('ig-preview-img').src = canvas.toDataURL('image/png');
+  }
+
+  // ── Exposed globals
+  window.igRegenerate = async function() {
+    _currentGradIdx = (_currentGradIdx + 1) % GRADIENTS.length;
+    await renderPreview();
+  };
+
+  window.igDownload = function() {
+    const img = document.getElementById('ig-preview-img');
+    const a = document.createElement('a');
+    a.download = (_currentBookData.title || 'book').replace(/[^a-z0-9]/gi,'_') + '.png';
+    a.href = img.src;
+    a.click();
+    igClose();
+  };
+
+  window.igClose = function() {
+    document.getElementById('ig-preview-overlay').classList.remove('open');
+    _currentBookData = null;
+  };
+
+  // Close on backdrop click
+  overlay.addEventListener('click', e => { if (e.target === overlay) igClose(); });
+
   const observer = new MutationObserver(addExportButtons);
   observer.observe(document.body, { childList:true, subtree:true });
   addExportButtons();
